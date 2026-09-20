@@ -71,6 +71,10 @@ web_password=
 
 # Snapshot
 snapshot_enabled=1
+
+# Development shell (temporary; disable for normal use)
+debug_telnet_enabled=1
+debug_telnet_port=2323
 EOF
 fi
 
@@ -142,6 +146,16 @@ if [ "$SNAPSHOT_ENABLED" = "1" ]; then
     else
         log_err "libjpeg.so.8 not found"
     fi
+fi
+
+# ------------------------------------------------------------
+# Temporary development shell
+# ------------------------------------------------------------
+DEBUG_TELNET=$(get_setting debug_telnet_enabled "1")
+DEBUG_TELNET_PORT=$(get_setting debug_telnet_port "2323")
+if [ "$DEBUG_TELNET" = "1" ]; then
+    telnetd -p "$DEBUG_TELNET_PORT" -l /bin/sh
+    log "Development telnet started on port $DEBUG_TELNET_PORT"
 fi
 
 # ------------------------------------------------------------
