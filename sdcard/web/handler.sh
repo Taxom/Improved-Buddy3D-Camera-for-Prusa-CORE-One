@@ -13,7 +13,7 @@ urldecode(){ printf '%b' "$(echo "$1"|sed 's/+/ /g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\
 html_escape(){ echo "$1"|sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
 send_headers(){ printf "HTTP/1.0 %s\r\nContent-Type: %s\r\nConnection: close\r\n\r\n" "$1" "$2"; }
 send_redirect(){ printf "HTTP/1.0 302 Found\r\nLocation: %s\r\nConnection: close\r\n\r\n" "$1"; }
-update_setting(){ KEY="$1"; VAL="$2"; if grep -q "^${KEY}=" "$SETTINGS" 2>/dev/null; then sed -i "s|^${KEY}=.*|${KEY}=${VAL}|" "$SETTINGS"; else echo "${KEY}=${VAL}" >> "$SETTINGS"; fi; touch /tmp/buddy_settings_changed; }
+update_setting(){ KEY="$1"; VAL="$2"; if grep -q "^${KEY}=" "$SETTINGS" 2>/dev/null; then sed -i "s|^${KEY}=.*|${KEY}=${VAL}|" "$SETTINGS"; else echo "${KEY}=${VAL}" >> "$SETTINGS"; fi; }
 
 capture_snapshot(){
   [ -x /tmp/snapshot_grabber ] || return 1
@@ -62,7 +62,7 @@ html_header(){
 EOF
   for PAGE in status capture media settings security logs; do LABEL=$(echo "$PAGE"|cut -c1|tr a-z A-Z)$(echo "$PAGE"|cut -c2-); [ "$PAGE" = "$ACTIVE" ] && echo "<a class=\"active\" href=\"/$PAGE\">$LABEL</a>" || echo "<a href=\"/$PAGE\">$LABEL</a>"; done
   echo '</nav><div class="wrap">'
-  [ -f /tmp/buddy_settings_changed ] && echo '<div class="card warn">Some settings require a reboot to apply.</div>'
+  [ -f /tmp/buddy_settings_changed ] && echo '<div class="card warn">Settings saved — restart required to apply pending changes.</div>'
 }
 html_footer(){ echo '</div></body></html>'; }
 
@@ -107,11 +107,11 @@ EOF
   A="";D="";N=""; case "$IR" in 0)D=selected;;2)N=selected;;*)A=selected;;esac; BCH="";[ "$BC" = 1 ]&&BCH=checked; BOH="";[ "$BO" = 1 ]&&BOH=checked
   send_headers "200 OK" "text/html"; html_header settings Settings
   cat <<EOF
-<h1>Settings</h1><form method="POST" action="/save/settings"><div class="card"><div class="setting"><label>Camera Name</label><input name="camera_name" value="$CN"></div><div class="setting"><label>Volume</label><input type="range" name="volume" min="0" max="100" value="$VOL"></div><div class="setting"><label>IR mode</label><select name="ir_mode"><option value="1" $A>Auto</option><option value="0" $D>Day</option><option value="2" $N>Night</option></select></div><div class="setting"><label>Video Quality</label><input type="range" name="video_quality" min="1" max="10" value="$VQ"></div></div><div class="card"><div class="setting"><label>Block Prusa Cloud</label><input type="checkbox" name="block_prusa_cloud" value="1" $BCH></div><div class="setting"><label>Block Prusa OTA</label><input type="checkbox" name="block_prusa_ota" value="1" $BOH></div><div class="note">Wi-Fi/DHCP/AP fallback are not managed by this overlay.</div></div><button class="btn">Save Settings</button></form>
+<h1>Settings</h1><form method="POST" action="/save/settings"><div class="card"><div class="setting"><label>Camera Name</label><input name="camera_name" value="$CN"></div><div class="setting"><label>Volume <strong id="volume-value">$VOL</strong></label><input type="range" name="volume" min="0" max="100" value="$VOL" oninput="document.getElementById('volume-value').textContent=this.value"></div><div class="setting"><label>IR mode</label><select name="ir_mode"><option value="1" $A>Auto</option><option value="0" $D>Day</option><option value="2" $N>Night</option></select></div><div class="setting"><label>Video Quality <strong id="quality-value">$VQ</strong></label><input type="range" name="video_quality" min="1" max="10" value="$VQ" oninput="document.getElementById('quality-value').textContent=this.value"></div></div><div class="card"><div class="setting"><label>Block Prusa Cloud</label><input type="checkbox" name="block_prusa_cloud" value="1" $BCH></div><div class="setting"><label>Block Prusa OTA</label><input type="checkbox" name="block_prusa_ota" value="1" $BOH></div><div class="note">Wi-Fi/DHCP/AP fallback are not managed by this overlay.</div></div><button class="btn">Save Settings</button></form>
 EOF
   html_footer;;
 /save/settings)
-  CN=$(urldecode "$(get_field camera_name)"); [ -n "$CN" ]&&update_setting camera_name "$CN"; update_setting ir_mode "$(get_field ir_mode)"; update_setting video_quality "$(get_field video_quality)"; update_setting volume "$(get_field volume)"; BC=$(get_field block_prusa_cloud); [ -z "$BC" ]&&BC=0; BO=$(get_field block_prusa_ota); [ -z "$BO" ]&&BO=0; update_setting block_prusa_cloud "$BC"; update_setting block_prusa_ota "$BO"; sync; send_redirect "/settings";;
+  CN=$(urldecode "$(get_field camera_name)"); [ -n "$CN" ]&&update_setting camera_name "$CN"; update_setting ir_mode "$(get_field ir_mode)"; update_setting video_quality "$(get_field video_quality)"; update_setting volume "$(get_field volume)"; BC=$(get_field block_prusa_cloud); [ -z "$BC" ]&&BC=0; BO=$(get_field block_prusa_ota); [ -z "$BO" ]&&BO=0; update_setting block_prusa_cloud "$BC"; update_setting block_prusa_ota "$BO"; touch /tmp/buddy_settings_changed; sync; send_redirect "/settings";;
 /security)
   U=$(html_escape "$(get_setting web_username '')"); TE=$(get_setting debug_telnet_enabled 1); TCH="";[ "$TE" = 1 ]&&TCH=checked
   send_headers "200 OK" "text/html"; html_header security Security
@@ -120,7 +120,7 @@ EOF
 /save/webauth)
   update_setting web_username "$(urldecode "$(get_field web_username)")"; update_setting web_password "$(urldecode "$(get_field web_password)")"; sync; send_redirect "/security";;
 /save/security)
-  TE=$(get_field debug_telnet_enabled); [ -z "$TE" ]&&TE=0; update_setting debug_telnet_enabled "$TE"; sync; send_redirect "/security";;
+  TE=$(get_field debug_telnet_enabled); [ -z "$TE" ]&&TE=0; update_setting debug_telnet_enabled "$TE"; touch /tmp/buddy_settings_changed; sync; send_redirect "/security";;
 /logs)
   W=$(echo "$QUERY_STRING"|tr '&' '\n'|grep '^file='|cut -d= -f2); [ -z "$W" ]&&W=boot
   case "$W" in web)LP="$WEBLOG";;snapshot)LP=/tmp/snapshot-grabber.log;;camera)CF=$(ls -1 "$SD/logs/" 2>/dev/null|grep '\.log$'|grep -v buddy_boot|grep -v web_access|sort -r|head -1);LP="$SD/logs/$CF";;*)LP="$SD/logs/buddy_boot.log";;esac
