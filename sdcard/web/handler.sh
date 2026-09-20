@@ -253,7 +253,7 @@ input[type=range]{width:110px;accent-color:#fa6831}
 <nav>
 CSSEOF
 
-    for page in status media settings capture network security logs; do
+    for page in status media settings capture security logs; do
         LABEL=$(echo "$page" | cut -c1 | tr a-z A-Z)$(echo "$page" | cut -c2-)
         if [ "$page" = "$ACTIVE" ]; then
             echo "<a href=\"/${page}\" class=\"active\">${LABEL}</a>"
@@ -323,24 +323,10 @@ case "$REQUEST_PATH" in
 
     # Service status
     RTSP_MODE=$(get_setting rtsp_server_mode "2")
-    CLOUD_ENABLED=$(get_setting cloud_enabled "0")
-    TEL_ENABLED=$(get_setting telnet_enabled "1")
-    TL_ENABLED=$(get_setting timelapse_enabled "0")
-    PT_ENABLED=$(get_setting pt_enabled "0")
-
-    # Print timelapse status
-    PT_STATE="IDLE" PT_PRINT_ID="" PT_FRAMES="0" PT_LAST_Z="0.00" PT_ELAPSED="0"
-    if [ -f /tmp/print_timelapse_status ]; then
-        PT_STATE=$(grep "^state=" /tmp/print_timelapse_status 2>/dev/null | cut -d= -f2)
-        PT_PRINT_ID=$(grep "^print_id=" /tmp/print_timelapse_status 2>/dev/null | cut -d= -f2)
-        PT_FRAMES=$(grep "^frame_count=" /tmp/print_timelapse_status 2>/dev/null | cut -d= -f2)
-        PT_LAST_Z=$(grep "^last_z=" /tmp/print_timelapse_status 2>/dev/null | cut -d= -f2)
-        PT_ELAPSED=$(grep "^elapsed_seconds=" /tmp/print_timelapse_status 2>/dev/null | cut -d= -f2)
-    fi
-    [ -z "$PT_STATE" ] && PT_STATE="IDLE"
-
-    PT_RUNNING="no"
-    ps 2>/dev/null | grep -q "print_timelapse" && PT_RUNNING="yes"
+    BLOCK_CLOUD=$(get_setting block_prusa_cloud "1")
+    BLOCK_OTA=$(get_setting block_prusa_ota "1")
+    TEL_ENABLED=$(get_setting debug_telnet_enabled "1")
+    SNAP_ENABLED=$(get_setting snapshot_enabled "1")
 
     send_headers "200 OK" "text/html"
     html_header "status" "Status"
@@ -392,11 +378,10 @@ HTMLEOF
 HTMLEOF
 
     echo "<div class='svc'><span>RTSP Streaming</span><span class='$([ "$RTSP_MODE" = "2" ] && echo svc-on || echo svc-off)'>$([ "$RTSP_MODE" = "2" ] && echo On || echo Off)</span></div>"
-    echo "<div class='svc'><span>Cloud Access</span><span class='$([ "$CLOUD_ENABLED" = "1" ] && echo svc-on || echo svc-off)'>$([ "$CLOUD_ENABLED" = "1" ] && echo Enabled || echo Blocked)</span></div>"
-    echo "<div class='svc'><span>Telnet</span><span class='$([ "$TEL_ENABLED" = "1" ] && echo svc-on || echo svc-off)'>$([ "$TEL_ENABLED" = "1" ] && echo On || echo Off)</span></div>"
-    echo "<div class='svc'><span>Timelapse Capture</span><span class='$([ "$TL_ENABLED" = "1" ] && echo svc-on || echo svc-off)'>$([ "$TL_ENABLED" = "1" ] && echo On || echo Off)</span></div>"
-    echo "<div class='svc'><span>Print Listener</span><span class='$([ "$PT_RUNNING" = "yes" ] && echo svc-on || echo svc-off)'>$([ "$PT_RUNNING" = "yes" ] && echo Running || echo Stopped)</span></div>"
-
+    echo "<div class='svc'><span>Prusa Cloud</span><span class='$([ "$BLOCK_CLOUD" = "1" ] && echo svc-off || echo svc-on)'>$([ "$BLOCK_CLOUD" = "1" ] && echo Blocked || echo Allowed)</span></div>"
+    echo "<div class='svc'><span>Prusa OTA</span><span class='$([ "$BLOCK_OTA" = "1" ] && echo svc-off || echo svc-on)'>$([ "$BLOCK_OTA" = "1" ] && echo Blocked || echo Allowed)</span></div>"
+    echo "<div class='svc'><span>Snapshot</span><span class='$([ "$SNAP_ENABLED" = "1" ] && echo svc-on || echo svc-off)'>$([ "$SNAP_ENABLED" = "1" ] && echo On-demand || echo Off)</span></div>"
+    echo "<div class='svc'><span>Debug Telnet</span><span class='$([ "$TEL_ENABLED" = "1" ] && echo svc-on || echo svc-off)'>$([ "$TEL_ENABLED" = "1" ] && echo Port\ 2323 || echo Off)</span></div>"
     echo '</div>'
 
     # Print timelapse status (if active)
@@ -457,432 +442,455 @@ HTMLEOF
 /settings)
     CAMERA_NAME=$(html_escape "$(get_setting camera_name 'Buddy3D Camera')")
     IR_MODE=$(get_setting ir_mode "1")
-    RTSP_MODE=$(get_setting rtsp_server_mode "2")
     VIDEO_QUALITY=$(get_setting video_quality "6")
     VOLUME=$(get_setting volume "40")
-    UPLOAD_INTERVAL=$(html_escape "$(get_setting snapshot_upload_interval '10000')")
-    AUDIO_MODE=$(get_setting audio_announcements "1")
-
-    CLOUD_ENABLED=$(get_setting cloud_enabled "0")
-
+    BLOCK_CLOUD=$(get_setting block_prusa_cloud "1")
+    BLOCK_OTA=$(get_setting block_prusa_ota "1")
+    BC_CHK="" ; [ "$BLOCK_CLOUD" = "1" ] && BC_CHK="checked"
+    BO_CHK="" ; [ "$BLOCK_OTA" = "1" ] && BO_CHK="checked"
     IR_AUTO="" IR_DAY="" IR_NIGHT=""
     case "$IR_MODE" in 0) IR_DAY="selected";; 1) IR_AUTO="selected";; 2) IR_NIGHT="selected";; *) IR_AUTO="selected";; esac
 
-    RTSP_CHK="" ; [ "$RTSP_MODE" = "2" ] && RTSP_CHK="checked"
-    CLOUD_CHK="" ; [ "$CLOUD_ENABLED" = "1" ] && CLOUD_CHK="checked"
-    OTA_ENABLED=$(get_setting ota_updates_enabled "1")
-    OTA_CHK="" ; [ "$OTA_ENABLED" = "1" ] && OTA_CHK="checked"
-    PRUSA_TOKEN=$(html_escape "$(get_setting prusa_token '')")
-    SCHED_REBOOT=$(html_escape "$(get_setting scheduled_reboot '')")
-
-    AUD_DEF="" AUD_MUTE="" AUD_DING=""
-    case "$AUDIO_MODE" in 0) AUD_MUTE="selected";; 1) AUD_DEF="selected";; 2) AUD_DING="selected";; *) AUD_DEF="selected";; esac
-
     send_headers "200 OK" "text/html"
     html_header "settings" "Settings"
-
     cat << HTMLEOF
 <h1>Settings</h1>
-<div class="subtitle">Camera configuration — saved to SD card</div>
-
+<div class="subtitle">Local camera settings — network association and DHCP remain stock</div>
 <form method="POST" action="/save/settings">
-
-<div class="card">
-<h2>General</h2>
-<div class="setting">
-<label>Camera Name</label>
-<input type="text" name="camera_name" value="${CAMERA_NAME}">
+<div class="card"><h2>General</h2>
+<div class="setting"><label>Camera Name</label><input type="text" name="camera_name" value="${CAMERA_NAME}"></div>
+<div class="setting"><label>Volume</label><div><input type="range" name="volume" min="0" max="100" value="${VOLUME}" oninput="this.nextElementSibling.textContent=this.value"><span class="range-val">${VOLUME}</span></div></div>
 </div>
-<div class="setting">
-<label>Volume<span class="hint">Speaker volume (0-100)</span></label>
-<div><input type="range" name="volume" min="0" max="100" value="${VOLUME}" oninput="this.nextElementSibling.textContent=this.value"><span class="range-val">${VOLUME}</span></div>
+<div class="card"><h2>Video</h2>
+<div class="setting"><label>IR / Night Mode</label><select name="ir_mode"><option value="1" ${IR_AUTO}>Auto</option><option value="0" ${IR_DAY}>Day</option><option value="2" ${IR_NIGHT}>Night</option></select></div>
+<div class="setting"><label>Video Quality<span class="hint">1 = lowest, 10 = highest</span></label><div><input type="range" name="video_quality" min="1" max="10" value="${VIDEO_QUALITY}" oninput="this.nextElementSibling.textContent=this.value"><span class="range-val">${VIDEO_QUALITY}</span></div></div>
+<div class="setting"><label>RTSP Streaming</label><span style="color:#6d8">Always on</span></div>
 </div>
-<div class="setting">
-<label>Audio Announcements<span class="hint">Voice, muted, or custom sounds</span></label>
-<select name="audio_announcements">
-<option value="1" ${AUD_DEF}>Default (voice)</option>
-<option value="0" ${AUD_MUTE}>Muted</option>
-<option value="2" ${AUD_DING}>Custom</option>
-</select>
+<div class="card"><h2>Privacy</h2>
+<div class="setting"><label>Block Prusa Cloud<span class="hint">RAM-only hosts overlay; reboot to apply</span></label><label class="toggle"><input type="checkbox" name="block_prusa_cloud" value="1" ${BC_CHK}><span class="sl"></span></label></div>
+<div class="setting"><label>Block Prusa OTA<span class="hint">Disable only when intentionally updating stock firmware</span></label><label class="toggle"><input type="checkbox" name="block_prusa_ota" value="1" ${BO_CHK}><span class="sl"></span></label></div>
+<div class="note">This overlay does not modify Wi-Fi credentials, DHCP/static IP, or start an AP fallback.</div>
 </div>
-<div class="note" style="margin-top:6px;line-height:1.7">
-<b>Custom sounds:</b> Place WAV files in the <code>sounds/</code> folder on the SD card.
-Files must be <b>mono, 16000 Hz, signed 16-bit PCM</b> WAV format.
-Name them to match the stock file you want to replace &mdash; unmatched files are ignored,
-and any stock sound without a replacement keeps playing normally.<br>
-<b>Available filenames:</b><br>
-<code style="font-size:.85em">wifi_success.wav, wifi_failed.wav, volume_changed.wav, upgrading.wav,
-stop_scanning.wav, start_scanning.wav, rtsp_enable.wav, rtsp_disable.wav,
-pairing_successful.wav, pairing_error.wav, night_mode.wav, invalid_qr_code.wav,
-factory_reset.wav, di.wav, day_mode.wav, auto_night_mode.wav, as.wav,
-application_exit.wav</code>
-</div>
-</div>
-
-<div class="card">
-<h2>Video</h2>
-<div class="setting">
-<label>IR / Night Mode</label>
-<select name="ir_mode">
-<option value="1" ${IR_AUTO}>Auto</option>
-<option value="0" ${IR_DAY}>Day (off)</option>
-<option value="2" ${IR_NIGHT}>Night (on)</option>
-</select>
-</div>
-<div class="setting">
-<label>Video Quality<span class="hint">1 = lowest, 10 = highest</span></label>
-<div><input type="range" name="video_quality" min="1" max="10" value="${VIDEO_QUALITY}" oninput="this.nextElementSibling.textContent=this.value"><span class="range-val">${VIDEO_QUALITY}</span></div>
-</div>
-<div class="setting">
-<label>RTSP Streaming</label>
-<label class="toggle"><input type="checkbox" name="rtsp_server_mode" value="2" ${RTSP_CHK}><span class="sl"></span></label>
-</div>
-</div>
-
-<div class="card">
-<h2>Cloud</h2>
-<div class="setting">
-<label>Cloud Access<span class="hint">Allow connections to Prusa servers</span></label>
-<label class="toggle"><input type="checkbox" name="cloud_enabled" value="1" ${CLOUD_CHK}><span class="sl"></span></label>
-</div>
-<div class="setting">
-<label>Firmware Updates<span class="hint">Allow Prusa OTA firmware updates</span></label>
-<label class="toggle"><input type="checkbox" name="ota_updates_enabled" value="1" ${OTA_CHK}><span class="sl"></span></label>
-</div>
-<div class="setting">
-<label>PrusaConnect Token<span class="hint">From PrusaConnect app &gt; Camera &gt; Token</span></label>
-<input type="text" name="prusa_token" value="${PRUSA_TOKEN}" placeholder="Paste token here">
-</div>
-<div class="setting">
-<label>Upload Interval<span class="hint">ms between snapshots (if cloud on)</span></label>
-<input type="text" name="snapshot_upload_interval" value="${UPLOAD_INTERVAL}">
-</div>
-</div>
-
-<div class="card">
-<h2>Maintenance</h2>
-<div class="setting">
-<label>Scheduled Daily Reboot<span class="hint">Time in HH:MM (24h), leave blank to disable</span></label>
-<input type="text" name="scheduled_reboot" value="${SCHED_REBOOT}" placeholder="04:00">
-</div>
-</div>
-
 <button type="submit" class="btn">Save Settings</button>
 </form>
-
 HTMLEOF
     html_footer
     ;;
 
 # ---- SAVE SETTINGS ----
 /save/settings)
-    web_log "Saving settings"
     CN=$(urldecode "$(get_field camera_name)")
-    update_setting camera_name "$CN"
+    [ -n "$CN" ] && update_setting camera_name "$CN"
     update_setting ir_mode "$(get_field ir_mode)"
     update_setting video_quality "$(get_field video_quality)"
     update_setting volume "$(get_field volume)"
-    update_setting snapshot_upload_interval "$(get_field snapshot_upload_interval)"
-    PT=$(urldecode "$(get_field prusa_token)")
-    update_setting prusa_token "$PT"
-    SR=$(urldecode "$(get_field scheduled_reboot)")
-    update_setting scheduled_reboot "$SR"
-    update_setting audio_announcements "$(get_field audio_announcements)"
-
-    # Checkboxes: present in BODY if checked, absent if unchecked
-    RTSP_VAL=$(get_field rtsp_server_mode)
-    [ -z "$RTSP_VAL" ] && RTSP_VAL=0
-    update_setting rtsp_server_mode "$RTSP_VAL"
-
-    CE=$(get_field cloud_enabled)
-    [ -z "$CE" ] && CE=0
-    update_setting cloud_enabled "$CE"
-
-    OE=$(get_field ota_updates_enabled)
-    [ -z "$OE" ] && OE=0
-    update_setting ota_updates_enabled "$OE"
-
-    # Apply cloud and OTA hosts
-    CLOUD_HOSTS="connect.prusa3d.com camera-signaling.prusa3d.com timezone.prusa3d.com prusa3d.pool.ntp.org"
-    OTA_HOST="connect-ota.prusa3d.com"
-    mount -o remount,rw / 2>/dev/null
-    if [ "$CE" = "1" ]; then
-        for h in $CLOUD_HOSTS; do grep -vF "$h" "$HOSTS" > "$HOSTS.tmp" && mv "$HOSTS.tmp" "$HOSTS"; done
-    else
-        for h in $CLOUD_HOSTS; do grep -qF "$h" "$HOSTS" || echo "127.0.0.1 $h" >> "$HOSTS"; done
-    fi
-    if [ "$OE" = "1" ]; then
-        grep -vF "$OTA_HOST" "$HOSTS" > "$HOSTS.tmp" && mv "$HOSTS.tmp" "$HOSTS"
-    else
-        grep -qF "$OTA_HOST" "$HOSTS" || echo "127.0.0.1 $OTA_HOST" >> "$HOSTS"
-    fi
-    mount -o remount,ro / 2>/dev/null
-
+    BC=$(get_field block_prusa_cloud); [ -z "$BC" ] && BC=0
+    BO=$(get_field block_prusa_ota); [ -z "$BO" ] && BO=0
+    update_setting block_prusa_cloud "$BC"
+    update_setting block_prusa_ota "$BO"
     sync
     send_redirect "/settings?saved=1"
     ;;
-
 # ---- CAPTURE PAGE ----
 /capture)
-    TL_ENABLED=$(get_setting timelapse_enabled "0")
-    TL_INTERVAL=$(get_setting timelapse_interval "60")
-    TL_CHK="" ; [ "$TL_ENABLED" = "1" ] && TL_CHK="checked"
-
-    TL_COUNT=0
-    [ -d "$SD/timelapse" ] && TL_COUNT=$(find "$SD/timelapse" -name "*.jpg" 2>/dev/null | wc -l)
-
     SNAP_COUNT=0
-    [ -d "$SD/snapshots" ] && SNAP_COUNT=$(find "$SD/snapshots" -name "*.jpg" 2>/dev/null | wc -l)
-
-    SD_FREE=$(df -h "$SD" 2>/dev/null | tail -1 | awk '{print $4}')
-
-    # Print timelapse settings
-    PT_ENABLED=$(get_setting pt_enabled "0")
-    PT_MODE=$(get_setting pt_capture_mode "layer")
-    PT_LAYER=$(html_escape "$(get_setting pt_layer_height '0.2')")
-    PT_DEBOUNCE=$(html_escape "$(get_setting pt_debounce_seconds '2.0')")
-    PT_INTERVAL_S=$(html_escape "$(get_setting pt_interval_seconds '10.0')")
-    PT_PORT=$(html_escape "$(get_setting pt_port '8514')")
-    PT_CONFIRM=$(html_escape "$(get_setting pt_confirmation_count '2')")
-    PT_STALE=$(html_escape "$(get_setting pt_stale_timeout '120')")
-
-    PT_CHK="" ; [ "$PT_ENABLED" = "1" ] && PT_CHK="checked"
-    PT_LAYER_SEL="" PT_INT_SEL=""
-    [ "$PT_MODE" = "interval" ] && PT_INT_SEL="selected" || PT_LAYER_SEL="selected"
-
-    # Print timelapse live status
-    PT_STATE="IDLE" PT_PRINT_ID="" PT_FRAMES="0" PT_LAST_Z="0.00" PT_ELAPSED="0"
-    if [ -f /tmp/print_timelapse_status ]; then
-        PT_STATE=$(grep "^state=" /tmp/print_timelapse_status 2>/dev/null | cut -d= -f2)
-        PT_PRINT_ID=$(grep "^print_id=" /tmp/print_timelapse_status 2>/dev/null | cut -d= -f2)
-        PT_FRAMES=$(grep "^frame_count=" /tmp/print_timelapse_status 2>/dev/null | cut -d= -f2)
-        PT_LAST_Z=$(grep "^last_z=" /tmp/print_timelapse_status 2>/dev/null | cut -d= -f2)
-        PT_ELAPSED=$(grep "^elapsed_seconds=" /tmp/print_timelapse_status 2>/dev/null | cut -d= -f2)
-    fi
-    [ -z "$PT_STATE" ] && PT_STATE="IDLE"
-
-    if [ "$PT_ELAPSED" -gt 0 ] 2>/dev/null; then
-        PT_HOURS=$((PT_ELAPSED / 3600))
-        PT_MINS=$(( (PT_ELAPSED % 3600) / 60 ))
-        PT_SECS=$((PT_ELAPSED % 60))
-        PT_TIME_STR=$(printf "%dh %02dm %02ds" $PT_HOURS $PT_MINS $PT_SECS)
-    else
-        PT_TIME_STR="—"
-    fi
-
-    PT_STATE_CLASS="good"
-    [ "$PT_STATE" = "PRINTING" ] && PT_STATE_CLASS="warn"
-
-    PT_RUNNING="no"
-    ps 2>/dev/null | grep -q "print_timelapse" && PT_RUNNING="yes"
-
-    PT_SESSIONS=0
-    [ -d /mnt/sdcard/timelapse ] && PT_SESSIONS=$(ls -d /mnt/sdcard/timelapse/[0-9]*_[0-9]* 2>/dev/null | wc -l)
-
-    CAM_IP=$(ifconfig wlan0 2>/dev/null | grep 'inet addr' | sed 's/.*addr:\([^ ]*\).*/\1/')
+    [ -d "$SD/snapshots" ] && SNAP_COUNT=$(ls -1 "$SD/snapshots/" 2>/dev/null | grep -c '\.jpg# ---- NETWORK MANAGEMENT DISABLED ----
+/network|/save/network|/save/wifi)
+    send_headers "403 Forbidden" "text/plain"
+    echo "Network management is intentionally disabled in the local-only build."
+    ;;
+# ---- SECURITY PAGE ----
+/security)
+    WEB_USER=$(html_escape "$(get_setting web_username '')")
+    TEL_ENABLED=$(get_setting telnet_enabled "1")
+    TEL_CHK="" ; [ "$TEL_ENABLED" = "1" ] && TEL_CHK="checked"
+    HAS_AUTH="" ; [ -n "$WEB_USER" ] && HAS_AUTH="yes"
 
     send_headers "200 OK" "text/html"
-    html_header "capture" "Capture"
+    html_header "security" "Security"
 
     cat << HTMLEOF
-<h1>Capture</h1>
-<div class="subtitle">Live preview, snapshots, and timelapse</div>
+<h1>Security</h1>
+<div class="subtitle">Access control and authentication</div>
 
 <div class="card">
-<h2>Live Preview</h2>
-<img id="preview" class="preview-img" src="/snapshot.jpg" alt="Camera preview">
-<script>
-var img=document.getElementById('preview');
-setInterval(function(){
-    var t=new Date().getTime();
-    img.src='/snapshot.jpg?t='+t;
-},5000);
-</script>
-<div class="note" style="margin-top:8px">Auto-refreshes every 5 seconds. For full video: <b>rtsp://${CAM_IP}/live</b></div>
-</div>
-
-<div class="card">
-<h2>Snapshot</h2>
-<form method="POST" action="/save/snapshot" style="margin:0">
-<button type="submit" class="btn btn-outline">Take Snapshot</button>
-</form>
-<div style="margin-top:8px;font-size:.8em;color:#667">${SNAP_COUNT} snapshots saved | ${SD_FREE} free on SD card</div>
-</div>
-
-<div class="card">
-<h2>Always-On Timelapse</h2>
-<form method="POST" action="/save/timelapse">
-<div class="setting">
-<label>Enable Timelapse<span class="hint">Auto-capture to SD card at regular intervals</span></label>
-<label class="toggle"><input type="checkbox" name="timelapse_enabled" value="1" ${TL_CHK}><span class="sl"></span></label>
-</div>
-<div class="setting">
-<label>Interval<span class="hint">Seconds between captures</span></label>
-<select name="timelapse_interval">
+<h2>Web UI Password</h2>
 HTMLEOF
 
-    for iv in 10 30 60 120 300 600 1800 3600; do
-        case "$iv" in
-            10) LBL="10 sec";; 30) LBL="30 sec";; 60) LBL="1 min";; 120) LBL="2 min";;
-            300) LBL="5 min";; 600) LBL="10 min";; 1800) LBL="30 min";; 3600) LBL="1 hour";;
+    if [ -n "$HAS_AUTH" ]; then
+        echo '<div style="font-size:.85em;color:#6d8;margin-bottom:10px">Password protection is active (user: '"$WEB_USER"')</div>'
+    else
+        echo '<div style="font-size:.85em;color:#db6;margin-bottom:10px">No password set — anyone on your network can access settings</div>'
+    fi
+
+    cat << HTMLEOF
+<form method="POST" action="/save/webauth">
+<div class="setting"><label>Username</label><input type="text" name="web_username" value="${WEB_USER}" placeholder="admin"></div>
+<div class="setting"><label>Password</label><input type="password" name="web_password" placeholder="Enter new password"></div>
+<button type="submit" class="btn btn-outline">Set Password</button>
+</form>
+HTMLEOF
+
+    if [ -n "$HAS_AUTH" ]; then
+        echo '<form method="POST" action="/save/webauth"><input type="hidden" name="web_username" value=""><input type="hidden" name="web_password" value=""><button type="submit" class="btn btn-outline" style="margin-top:6px">Remove Password</button></form>'
+    fi
+
+    cat << HTMLEOF
+</div>
+
+<div class="card">
+<h2>Telnet Remote Access</h2>
+<form method="POST" action="/save/security">
+<div class="setting">
+<label>Telnet Access<span class="hint">Remote shell on port 23 (root access)</span></label>
+<label class="toggle"><input type="checkbox" name="telnet_enabled" value="1" ${TEL_CHK}><span class="sl"></span></label>
+</div>
+<button type="submit" class="btn btn-outline">Save Telnet Setting</button>
+</form>
+
+</div>
+HTMLEOF
+    html_footer
+    ;;
+
+# ---- SAVE WEB AUTH ----
+/save/webauth)
+    web_log "Updating web authentication"
+    WU=$(urldecode "$(get_field web_username)")
+    WP=$(urldecode "$(get_field web_password)")
+    update_setting web_username "$WU"
+    update_setting web_password "$WP"
+    sync
+    send_redirect "/security?saved=1"
+    ;;
+
+# ---- SAVE SECURITY (telnet) ----
+/save/security)
+    web_log "Saving security settings"
+    TE=$(get_field telnet_enabled)
+    [ -z "$TE" ] && TE=0
+    update_setting telnet_enabled "$TE"
+    sync
+    send_redirect "/security?saved=1"
+    ;;
+
+
+# ---- LOGS PAGE ----
+/logs)
+    LOG_SEL=$(echo "$QUERY_STRING" | tr '&' '\n' | grep '^file=' | head -1 | cut -d= -f2)
+    [ -z "$LOG_SEL" ] && LOG_SEL="boot"
+
+    case "$LOG_SEL" in
+        boot) LOG_PATH="$SD/logs/buddy_boot.log"; LOG_TITLE="Boot Log" ;;
+        web) LOG_PATH="$SD/logs/web_access.log"; LOG_TITLE="Web Access Log" ;;
+        print) LOG_PATH="$SD/logs/print_timelapse.log"; LOG_TITLE="Print Timelapse Log" ;;
+        camera) LOG_PATH=$(ls -1 "$SD/logs/" 2>/dev/null | grep '\.log$' | grep -v buddy_boot | grep -v web_access | grep -v print_timelapse | sort -r | head -1); [ -n "$LOG_PATH" ] && LOG_PATH="$SD/logs/$LOG_PATH"; LOG_TITLE="Camera Log" ;;
+        *) LOG_PATH="$SD/logs/buddy_boot.log"; LOG_TITLE="Boot Log"; LOG_SEL="boot" ;;
+    esac
+
+    send_headers "200 OK" "text/html"
+    html_header "logs" "Logs"
+
+    cat << HTMLEOF
+<h1>Logs</h1>
+<div class="subtitle">System and application logs</div>
+
+<div class="log-tabs">
+HTMLEOF
+
+    for tab in boot web print camera; do
+        case "$tab" in
+            boot) TLBL="Boot";; web) TLBL="Web";; print) TLBL="Print";; camera) TLBL="Camera";;
         esac
-        SEL="" ; [ "$TL_INTERVAL" = "$iv" ] && SEL="selected"
-        echo "<option value=\"$iv\" $SEL>$LBL</option>"
+        if [ "$tab" = "$LOG_SEL" ]; then
+            echo "<a href=\"/logs?file=${tab}\" class=\"active\">${TLBL}</a>"
+        else
+            echo "<a href=\"/logs?file=${tab}\">${TLBL}</a>"
+        fi
     done
 
     cat << HTMLEOF
-</select>
-</div>
-<button type="submit" class="btn btn-outline">Save Timelapse Settings</button>
-</form>
-<div style="margin-top:8px;font-size:.8em;color:#667">${TL_COUNT} timelapse images captured</div>
 </div>
 
-<form method="POST" action="/save/print">
 <div class="card">
-<h2>Print Timelapse</h2>
-
-<div class="stat-grid">
-<div class="stat"><div class="label">State</div><div class="value ${PT_STATE_CLASS}">${PT_STATE}</div></div>
-<div class="stat"><div class="label">Listener</div><div class="value$([ "$PT_RUNNING" = "yes" ] && echo ' good' || echo ' bad')">$([ "$PT_RUNNING" = "yes" ] && echo 'Running' || echo 'Stopped')</div></div>
+<h2>${LOG_TITLE}</h2>
+<div class="log-list">
 HTMLEOF
 
-    if [ "$PT_STATE" = "PRINTING" ]; then
-        cat << HTMLEOF
-<div class="stat"><div class="label">Session</div><div class="value">${PT_PRINT_ID}</div></div>
-<div class="stat"><div class="label">Frames</div><div class="value">${PT_FRAMES}</div></div>
-<div class="stat"><div class="label">Current Z</div><div class="value">${PT_LAST_Z}mm</div></div>
-<div class="stat"><div class="label">Elapsed</div><div class="value">${PT_TIME_STR}</div></div>
-HTMLEOF
+    if [ -n "$LOG_PATH" ] && [ -f "$LOG_PATH" ] && [ -s "$LOG_PATH" ]; then
+        tail -100 "$LOG_PATH" | while IFS= read -r line; do
+            ESC_LINE=$(echo "$line" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+            case "$line" in
+                *ERROR*|*error*|*Error*) echo "<div class='log-entry error'>${ESC_LINE}</div>" ;;
+                *WARNING*|*WARN*|*warn*) echo "<div class='log-entry warn'>${ESC_LINE}</div>" ;;
+                *) echo "<div class='log-entry'>${ESC_LINE}</div>" ;;
+            esac
+        done
+    else
+        echo '<div class="log-entry" style="color:#556">Log file is empty or not found</div>'
     fi
 
     cat << HTMLEOF
 </div>
-<hr class="sep">
-<div class="setting">
-<label>Enable Print Timelapse<span class="hint">Listen for printer metrics on UDP</span></label>
-<label class="toggle"><input type="checkbox" name="pt_enabled" value="1" ${PT_CHK}><span class="sl"></span></label>
-</div>
-<div class="setting">
-<label>Capture Mode</label>
-<select name="pt_capture_mode" onchange="document.getElementById('layer-opts').style.display=this.value=='layer'?'block':'none';document.getElementById('int-opts').style.display=this.value=='interval'?'block':'none'">
-<option value="layer" ${PT_LAYER_SEL}>Per Layer</option>
-<option value="interval" ${PT_INT_SEL}>Timed Interval</option>
-</select>
-</div>
-<div id="layer-opts" style="display:$([ "$PT_MODE" != "interval" ] && echo 'block' || echo 'none')">
-<div class="setting"><label>Layer Height<span class="hint">mm — snapshot when Z advances by this amount</span></label><input type="text" name="pt_layer_height" value="${PT_LAYER}"></div>
-<div class="setting"><label>Debounce<span class="hint">Seconds Z must be stable (filters Z-hops)</span></label><input type="text" name="pt_debounce_seconds" value="${PT_DEBOUNCE}"></div>
-</div>
-<div id="int-opts" style="display:$([ "$PT_MODE" = "interval" ] && echo 'block' || echo 'none')">
-<div class="setting"><label>Interval<span class="hint">Seconds between snapshots</span></label><input type="text" name="pt_interval_seconds" value="${PT_INTERVAL_S}"></div>
-</div>
-<div class="setting"><label>UDP Port<span class="hint">Port for printer metrics</span></label><input type="text" name="pt_port" value="${PT_PORT}"></div>
 </div>
 
-<details style="margin-top:12px">
-<summary style="color:#7889aa;font-size:.85em;cursor:pointer;padding:8px 0">Advanced Settings</summary>
-<div class="card" style="margin-top:8px">
-<div class="setting"><label>Confirmation Count<span class="hint">Consecutive readings to confirm state change</span></label><input type="text" name="pt_confirmation_count" value="${PT_CONFIRM}"></div>
-<div class="setting"><label>Stale Timeout<span class="hint">Seconds without data before ending session</span></label><input type="text" name="pt_stale_timeout" value="${PT_STALE}"></div>
-</div>
-</details>
-
-<button type="submit" class="btn">Save Print Settings</button>
-<div class="note" style="margin-top:8px">Print timelapse changes require a reboot to take effect (restarts the listener).</div>
-</form>
+<a href="/logs?file=${LOG_SEL}" class="btn btn-outline" style="text-decoration:none">Refresh</a>
 HTMLEOF
 
-    # Setup instructions
-    cat << HTMLEOF
-<details style="margin-top:12px">
-<summary style="color:#fa6831;font-size:.9em;cursor:pointer;padding:8px 0;font-weight:500">Print Timelapse Printer Setup Guide</summary>
-<div class="card" style="margin-top:8px">
-<h2>PrusaSlicer Configuration</h2>
-<p style="font-size:.85em;color:#aab;line-height:1.6;margin-bottom:12px">
-Add these lines to the <b>end</b> of your Start G-code in PrusaSlicer
-(Printer Settings &rarr; Custom G-code &rarr; Start G-code):
-</p>
-<pre style="background:#1a1a2e;padding:12px;border-radius:6px;font-size:.82em;color:#ccc;overflow-x:auto;line-height:1.6">; === Camera Timelapse Setup ===
-M334 ${CAM_IP} 8514 13514
-M331 is_printing
-M331 pos_z</pre>
-<div class="note" style="margin-top:10px">
-First print only: the printer will show a confirmation on the LCD asking you to approve
-the metrics destination. Press <b>Yes</b>. This persists across power cycles.
-</div>
+    html_footer
+    ;;
 
-<h2 style="margin-top:16px">Optional: Clean Snapshots</h2>
-<p style="font-size:.85em;color:#aab;line-height:1.6;margin-bottom:12px">
-For layer mode: add to <b>After layer change G-code</b> to park the print head during capture:
-</p>
-<pre style="background:#1a1a2e;padding:12px;border-radius:6px;font-size:.82em;color:#ccc;overflow-x:auto;line-height:1.6">G10
-G1 X0 Y210 F9000
-G4 P4000
-G1 X{first_layer_print_min[0]} Y{first_layer_print_min[1]} F9000
-G11</pre>
-<div class="note" style="margin-top:10px">G10/G11 retract and unretract to prevent oozing. The 4-second pause gives the camera time to capture after Z-hops settle. Adds ~5 seconds per layer. Skip this if using interval mode.</div>
+# ---- MEDIA PAGE ----
+/media)
+    send_headers "200 OK" "text/html"
+    html_header "media" "Media"
+
+    cat << 'HTMLEOF'
+<h1>Media</h1>
+<div class="subtitle">Snapshots and timelapse videos</div>
+HTMLEOF
+
+    # Snapshots section — use ls on directory (not glob) for BusyBox compatibility
+    SNAP_COUNT=0
+    [ -d "$SD/snapshots" ] && SNAP_COUNT=$(ls -1 "$SD/snapshots/" 2>/dev/null | grep -c '\.jpg$')
+
+    echo '<div class="card"><h2>Snapshots ('"$SNAP_COUNT"')</h2>'
+    if [ "$SNAP_COUNT" -gt 0 ]; then
+        ls -1 "$SD/snapshots/" 2>/dev/null | grep '\.jpg$' | sort -r | head -30 | while read FNAME; do
+            # Format: 2026-03-30_14-30-00.jpg → 2026-03-30 14:30:00
+            DISPLAY=$(echo "$FNAME" | sed 's/\.jpg$//; s/_/ /' | awk -F- '{if(NF>=5) printf "%s-%s-%s %s:%s:%s",$1,$2,$3,$4,$5,$6; else print $0}')
+            echo "<div class='media-item'><span class='name'>${DISPLAY}</span><span class='actions'><a href='/file/snapshots/${FNAME}' class='btn btn-outline btn-sm' target='_blank'>View</a><form method='POST' action='/delete/snapshot/${FNAME}' style='display:inline;margin:0' onsubmit='return confirm(\"Delete this snapshot?\")'><button type='submit' class='btn btn-outline btn-sm btn-danger'>Delete</button></form></span></div>"
+        done
+        if [ "$SNAP_COUNT" -gt 30 ]; then
+            echo "<div style='font-size:.8em;color:#556;padding:8px 0'>Showing 30 of ${SNAP_COUNT} snapshots</div>"
+        fi
+    else
+        echo '<div style="font-size:.85em;color:#556;padding:8px 0">No snapshots yet. Use the Capture page to take some.</div>'
+    fi
+    echo '</div>'
+
+    # Print timelapse sessions — list timelapse dir, filter for session-format names (YYYYMMDD_HHMMSS)
+    PT_COUNT=0
+    [ -d "$SD/timelapse" ] && PT_COUNT=$(ls -1 "$SD/timelapse/" 2>/dev/null | grep -c '^[0-9]*_[0-9]')
+    echo '<div class="card"><h2>Print Timelapses ('"$PT_COUNT"')</h2>'
+    if [ "$PT_COUNT" -gt 0 ]; then
+        ls -1 "$SD/timelapse/" 2>/dev/null | grep '^[0-9]*_[0-9]' | sort -r | head -20 | while read SNAME; do
+            SDIR="$SD/timelapse/$SNAME"
+            SFRAMES=$(ls -1 "$SDIR/" 2>/dev/null | grep -c 'frame_.*\.jpg$')
+            echo "<div class='media-item'><div><span class='name'>${SNAME}</span><br><span class='meta'>${SFRAMES} frames</span></div><span class='actions'><a href='/download/timelapse/${SNAME}' class='btn btn-outline btn-sm'>Download .tar</a><form method='POST' action='/delete/timelapse/${SNAME}' style='display:inline;margin:0' onsubmit='return confirm(\"Delete this session and all ${SFRAMES} frames?\")'><button type='submit' class='btn btn-outline btn-sm btn-danger'>Delete</button></form></span></div>"
+        done
+    else
+        echo '<div style="font-size:.85em;color:#556;padding:8px 0">No print timelapse sessions yet.</div>'
+    fi
+    echo '</div>'
+
+    # Regular timelapse dates — filter for date-format names (YYYY-MM-DD)
+    TL_COUNT=0
+    [ -d "$SD/timelapse" ] && TL_COUNT=$(ls -1 "$SD/timelapse/" 2>/dev/null | grep -c '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$')
+    echo '<div class="card"><h2>Timelapse Captures ('"$TL_COUNT"')</h2>'
+    if [ "$TL_COUNT" -gt 0 ]; then
+        ls -1 "$SD/timelapse/" 2>/dev/null | grep '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$' | sort -r | head -20 | while read DNAME; do
+            DDIR="$SD/timelapse/$DNAME"
+            DFRAMES=$(ls -1 "$DDIR/" 2>/dev/null | grep -c '\.jpg$')
+            echo "<div class='media-item'><div><span class='name'>${DNAME}</span><br><span class='meta'>${DFRAMES} frames</span></div><span class='actions'><a href='/download/timelapse/${DNAME}' class='btn btn-outline btn-sm'>Download .tar</a><form method='POST' action='/delete/timelapse/${DNAME}' style='display:inline;margin:0' onsubmit='return confirm(\"Delete this capture and all ${DFRAMES} frames?\")'><button type='submit' class='btn btn-outline btn-sm btn-danger'>Delete</button></form></span></div>"
+        done
+    else
+        echo '<div style="font-size:.85em;color:#556;padding:8px 0">No timelapse captures yet. Enable timelapse on the Capture page.</div>'
+    fi
+    echo '</div>'
+
+    cat << 'HTMLEOF'
+<div class="note" style="line-height:1.8">
+<b>Compiling videos:</b> The camera does not have enough RAM to encode video on-device.
+To create a timelapse video, pull the SD card and run on your PC (requires <a href="https://ffmpeg.org" style="color:#fa6831">ffmpeg</a>):<br>
+<code style="font-size:.95em;color:#ccc">cd timelapse/SESSION_FOLDER</code><br>
+<b>Print timelapses</b> (numbered frames):<br>
+<code style="font-size:.95em;color:#ccc">ffmpeg -framerate 30 -i frame_%05d.jpg -c:v libx264 -pix_fmt yuv420p timelapse.mp4</code><br>
+<b>Regular timelapses</b> (timestamped frames):<br>
+<code style="font-size:.95em;color:#ccc">ffmpeg -framerate 30 -pattern_type glob -i "*.jpg" -c:v libx264 -pix_fmt yuv420p timelapse.mp4</code><br>
+Copy the resulting <code>timelapse.mp4</code> back to the session folder on the SD card to view it here.
 </div>
-</details>
+HTMLEOF
+
+    html_footer
+    ;;
+
+# ---- SERVE MEDIA FILES ----
+/file/*)
+    REL=$(echo "$REQUEST_PATH" | sed 's|^/file/||')
+    # Security: prevent path traversal
+    REL=$(urldecode "$REL")
+    case "$REL" in
+        *..*|/* ) send_headers "403 Forbidden" "text/plain"; echo "Forbidden"; exit 0 ;;
+    esac
+    FILE="$SD/$REL"
+    if [ -f "$FILE" ]; then
+        case "$FILE" in
+            *.jpg) CT="image/jpeg" ;;
+            *.mp4) CT="video/mp4" ;;
+            *.log) CT="text/plain" ;;
+            *) CT="application/octet-stream" ;;
+        esac
+        SIZE=$(wc -c < "$FILE")
+        printf "HTTP/1.0 200 OK\r\nContent-Type: ${CT}\r\nContent-Length: ${SIZE}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n"
+        cat "$FILE"
+    else
+        send_headers "404 Not Found" "text/plain"
+        echo "File not found"
+    fi
+    ;;
+
+# ---- DOWNLOAD TIMELAPSE TAR ----
+/download/timelapse/*)
+    SESSION=$(echo "$REQUEST_PATH" | sed 's|^/download/timelapse/||')
+    SESSION=$(urldecode "$SESSION")
+    case "$SESSION" in *..*|/*|"" ) send_headers "403 Forbidden" "text/plain"; echo "Forbidden"; exit 0 ;; esac
+    DIR="$SD/timelapse/$SESSION"
+    if [ -d "$DIR" ]; then
+        TARNAME="${SESSION}.tar"
+        printf "HTTP/1.0 200 OK\r\nContent-Type: application/x-tar\r\nContent-Disposition: attachment; filename=\"${TARNAME}\"\r\nConnection: close\r\n\r\n"
+        tar cf - -C "$SD/timelapse" "$SESSION" 2>/dev/null
+    else
+        send_headers "404 Not Found" "text/plain"
+        echo "Session not found"
+    fi
+    ;;
+
+# ---- DELETE SNAPSHOT ----
+/delete/snapshot/*)
+    FNAME=$(echo "$REQUEST_PATH" | sed 's|^/delete/snapshot/||')
+    FNAME=$(urldecode "$FNAME")
+    case "$FNAME" in *..*|/*|"" ) send_headers "403 Forbidden" "text/plain"; echo "Forbidden"; exit 0 ;; esac
+    FILE="$SD/snapshots/$FNAME"
+    if [ -f "$FILE" ]; then
+        rm -f "$FILE"
+        web_log "Deleted snapshot: $FNAME"
+    else
+        web_log "WARN: Snapshot not found for delete: $FNAME"
+    fi
+    send_redirect "/media"
+    ;;
+
+# ---- DELETE TIMELAPSE SESSION ----
+/delete/timelapse/*)
+    SESSION=$(echo "$REQUEST_PATH" | sed 's|^/delete/timelapse/||')
+    SESSION=$(urldecode "$SESSION")
+    case "$SESSION" in *..*|/*|"" ) send_headers "403 Forbidden" "text/plain"; echo "Forbidden"; exit 0 ;; esac
+    DIR="$SD/timelapse/$SESSION"
+    if [ -d "$DIR" ]; then
+        rm -rf "$DIR"
+        web_log "Deleted timelapse session: $SESSION"
+    else
+        web_log "WARN: Timelapse session not found for delete: $SESSION"
+    fi
+    send_redirect "/media"
+    ;;
+
+# ---- LEGACY REDIRECTS ----
+/camera|/print)
+    send_redirect "/capture"
+    ;;
+
+/system)
+    send_redirect "/status"
+    ;;
+
+# ---- REBOOT ----
+/reboot)
+    web_log "REBOOT requested via web UI"
+    send_headers "200 OK" "text/html"
+    cat << 'EOF'
+<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Rebooting</title>
+<style>body{font-family:-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;display:flex;justify-content:center;align-items:center;height:100vh;text-align:center}.m{max-width:300px}.m h2{color:#fa6831;margin-bottom:12px}.m p{color:#667;font-size:.9em;line-height:1.5}</style>
+</head><body><div class="m"><h2>Rebooting...</h2><p>The camera is restarting. This page will refresh in 30 seconds.</p></div>
+<script>setTimeout(function(){window.location='/'},30000)</script></body></html>
+EOF
+    sync
+    sleep 1
+    reboot -f &
+    ;;
+
+# ---- FACTORY RESET ----
+/reset)
+    web_log "FACTORY RESET requested via web UI"
+    rm -f "$SETTINGS"
+    sync
+    send_headers "200 OK" "text/html"
+    cat << 'EOF'
+<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Reset</title>
+<style>body{font-family:-apple-system,sans-serif;background:#1a1a2e;color:#e0e0e0;display:flex;justify-content:center;align-items:center;height:100vh;text-align:center}.m{max-width:300px}.m h2{color:#fa6831;margin-bottom:12px}.m p{color:#667;font-size:.9em;line-height:1.5}</style>
+</head><body><div class="m"><h2>Settings Reset</h2><p>All settings have been cleared. Reboot the camera for factory defaults.</p><br><a href="/settings" style="color:#fa6831">Back to Settings</a></div></body></html>
+EOF
+    ;;
+
+# ---- 404 ----
+*)
+    send_headers "404 Not Found" "text/html"
+    echo '<!DOCTYPE html><html><head><style>body{font-family:sans-serif;background:#1a1a2e;color:#e0e0e0;display:flex;justify-content:center;align-items:center;height:100vh}</style></head><body><h2>404 — Not Found</h2></body></html>'
+    ;;
+
+esac
+)
+    SD_FREE=$(df -h "$SD" 2>/dev/null | tail -1 | awk '{print $4}')
+    CAM_IP=$(ifconfig wlan0 2>/dev/null | grep 'inet addr' | sed 's/.*addr:\([^ ]*\).*/\1/')
+    send_headers "200 OK" "text/html"
+    html_header "capture" "Capture"
+    cat << HTMLEOF
+<h1>Capture</h1>
+<div class="subtitle">On-demand JPEG preview and snapshots</div>
+<div class="card"><h2>Preview</h2>
+<img id="preview" class="preview-img" src="/snapshot.jpg?t=$(date +%s)" alt="Camera preview">
+<div style="margin-top:10px"><button type="button" class="btn btn-outline" onclick="document.getElementById('preview').src='/snapshot.jpg?t='+Date.now()">Refresh Preview</button></div>
+<div class="note">A fresh JPEG is generated only when requested. Full video: <b>rtsp://${CAM_IP}/live</b></div>
+</div>
+<div class="card"><h2>Save Snapshot</h2>
+<form method="POST" action="/save/snapshot"><button type="submit" class="btn btn-outline">Take Snapshot</button></form>
+<div style="margin-top:8px;font-size:.8em;color:#667">${SNAP_COUNT} snapshots saved | ${SD_FREE} free on SD card</div>
+</div>
 HTMLEOF
     html_footer
+    ;;
+
+# ---- FRESH SNAPSHOT HELPER ----
+capture_snapshot() {
+    [ -x /tmp/snapshot_grabber ] || return 1
+    WAIT=0
+    while ! mkdir /tmp/buddy_snapshot.lock 2>/dev/null; do
+        WAIT=$((WAIT + 1))
+        [ "$WAIT" -ge 20 ] && return 1
+        sleep 1
+    done
+    rm -f /tmp/buddy_snapshot.jpg
+    LD_LIBRARY_PATH=/tmp /tmp/snapshot_grabber /tmp/buddy_snapshot.jpg >/tmp/snapshot-grabber.log 2>&1
+    RC=$?
+    rmdir /tmp/buddy_snapshot.lock 2>/dev/null
+    [ "$RC" -eq 0 ] && [ -f /tmp/buddy_snapshot.jpg ] && [ "$(wc -c < /tmp/buddy_snapshot.jpg)" -gt 1000 ]
+}
+
+# ---- SNAPSHOT IMAGE ----
+/snapshot.jpg)
+    if capture_snapshot; then
+        SIZE=$(wc -c < /tmp/buddy_snapshot.jpg)
+        printf "HTTP/1.0 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: ${SIZE}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
+        cat /tmp/buddy_snapshot.jpg
+    else
+        send_headers "503 Service Unavailable" "text/plain"
+        echo "Fresh snapshot unavailable"
+    fi
     ;;
 
 # ---- SAVE SNAPSHOT ----
 /save/snapshot)
     mkdir -p "$SD/snapshots"
-    FNAME="$SD/snapshots/$(date +%Y-%m-%d_%H-%M-%S).jpg"
-    if cp /tmp/buddy_snapshot.jpg "$FNAME" 2>/dev/null; then
+    if capture_snapshot; then
+        FNAME="$SD/snapshots/$(date +%Y-%m-%d_%H-%M-%S).jpg"
+        cp /tmp/buddy_snapshot.jpg "$FNAME" && sync
         web_log "Snapshot saved: $FNAME"
     else
-        web_log "ERROR: Failed to save snapshot (source missing?)"
+        web_log "ERROR: Fresh snapshot capture failed"
     fi
-    sync
     send_redirect "/capture"
     ;;
-
-# ---- SAVE TIMELAPSE ----
-/save/timelapse)
-    web_log "Saving timelapse settings"
-    TLE=$(get_field timelapse_enabled)
-    TLI=$(get_field timelapse_interval)
-    [ -z "$TLE" ] && TLE=0
-    [ -z "$TLI" ] && TLI=60
-    update_setting timelapse_enabled "$TLE"
-    update_setting timelapse_interval "$TLI"
-    sync
-    send_redirect "/capture?saved=1"
-    ;;
-
-# ---- SNAPSHOT IMAGE ----
-/snapshot.jpg)
-    if [ -f /tmp/buddy_snapshot.jpg ] && [ "$(wc -c < /tmp/buddy_snapshot.jpg 2>/dev/null)" -gt 1000 ]; then
-        SIZE=$(wc -c < /tmp/buddy_snapshot.jpg)
-        printf "HTTP/1.0 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: ${SIZE}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n"
-        cat /tmp/buddy_snapshot.jpg
-    else
-        send_headers "503 Service Unavailable" "text/plain"
-        echo "Snapshot not available — RTSP stream works at rtsp://$(ifconfig wlan0 2>/dev/null | grep 'inet addr' | sed 's/.*addr:\([^ ]*\).*/\1/')/live"
-    fi
-    ;;
-
-# ---- SAVE PRINT SETTINGS ----
-/save/print)
-    web_log "Saving print timelapse settings"
-    for key in pt_enabled pt_capture_mode pt_layer_height pt_debounce_seconds pt_interval_seconds pt_port pt_confirmation_count pt_stale_timeout; do
-        VAL=$(get_field "$key")
-        [ -z "$VAL" ] && continue
-        update_setting "$key" "$VAL"
-    done
-    # Handle unchecked toggle
-    echo "$BODY" | grep -q "pt_enabled=" || update_setting pt_enabled 0
-    # Signal the running binary to reload config
-    PID=$(ps 2>/dev/null | grep "print_timelapse" | grep -v grep | awk '{print $1}')
-    [ -n "$PID" ] && kill -HUP "$PID" 2>/dev/null
-    sync
-    send_redirect "/capture?saved=1"
-    ;;
-
 # ---- NETWORK PAGE ----
 /network)
     IP_MODE=$(get_setting ip_mode "dhcp")
