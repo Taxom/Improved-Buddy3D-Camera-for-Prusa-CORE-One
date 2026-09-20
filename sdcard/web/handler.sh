@@ -22,7 +22,7 @@ capture_snapshot(){
   rm -f /tmp/buddy_snapshot.jpg
   LD_LIBRARY_PATH=/tmp /tmp/snapshot_grabber /tmp/buddy_snapshot.jpg >/tmp/snapshot-grabber.log 2>&1
   RC=$?
-  rmdir /tmp/buddy_snapshot.lock 2>/dev/null
+  rm -rf /tmp/buddy_snapshot.lock 2>/dev/null
   [ "$RC" -eq 0 ] && [ -f /tmp/buddy_snapshot.jpg ] && [ "$(wc -c < /tmp/buddy_snapshot.jpg 2>/dev/null)" -gt 1000 ]
 }
 
