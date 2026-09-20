@@ -78,7 +78,7 @@ case "$REQUEST_PATH" in
   cat <<EOF
 <h1>$CAMERA_NAME</h1><div class="card"><h2>System</h2><div class="svc"><span>IP</span><span>$CUR_IP</span></div><div class="svc"><span>SSID</span><span>$(html_escape "$SSID")</span></div><div class="svc"><span>Available RAM</span><span>${MEM_FREE:-?} KB</span></div><div class="svc"><span>SD free</span><span>${SD_FREE:-?}</span></div></div>
 <div class="card"><h2>Services</h2><div class="svc"><span>RTSP</span><span class="good">rtsp://$CUR_IP/live</span></div><div class="svc"><span>Snapshot</span><span class="good">On-demand</span></div><div class="svc"><span>Prusa Cloud</span><span>$([ "$BC" = 1 ]&&echo Blocked||echo Allowed)</span></div><div class="svc"><span>Prusa OTA</span><span>$([ "$BO" = 1 ]&&echo Blocked||echo Allowed)</span></div><div class="svc"><span>Debug Telnet</span><span>$([ "$TE" = 1 ]&&echo 2323||echo Disabled)</span></div></div>
-<form method="POST" action="/reboot"><button class="btn btn-outline">Restart Camera</button></form>
+<div class="card"><div class="note">Warm reboot is disabled: on this camera it can start stock firmware before the SD overlay is available. Use a power cycle when a restart is required.</div></div>
 EOF
   html_footer;;
 /capture)
@@ -129,6 +129,6 @@ EOF
   echo '</div>'; html_footer;;
 /network|/save/network|/save/wifi|/save/timelapse|/save/print) send_headers "403 Forbidden" "text/plain"; echo "Disabled in local-only build.";;
 /camera|/print|/system) send_redirect "/status";;
-/reboot) send_headers "200 OK" "text/html"; echo '<html><body><h2>Rebooting...</h2></body></html>'; sync; sleep 1; reboot -f &;;
+/reboot) send_headers "409 Conflict" "text/plain"; echo "Warm reboot disabled. Power-cycle the camera to guarantee the SD overlay loads.";;
 /*) send_headers "404 Not Found" "text/plain"; echo "Not found";;
 esac
