@@ -64,6 +64,10 @@ ir_mode=1
 block_prusa_cloud=1
 block_prusa_ota=1
 
+# Optional local NTP server. Leave blank to keep stock NTP behavior.
+# Set this privately in buddy_settings.ini on the SD card.
+local_ntp_server=
+
 # Web UI
 web_enabled=1
 web_username=
@@ -125,6 +129,34 @@ EOF
     fi
 else
     log "Prusa service blocking disabled"
+fi
+
+# ------------------------------------------------------------
+# Optional local NTP override
+# ------------------------------------------------------------
+# If local_ntp_server is set in the private SD-card settings, replace the
+# stock pool.ntp.org configuration at runtime. Nothing under /oem is modified.
+LOCAL_NTP=$(get_setting local_ntp_server "")
+if [ -n "$LOCAL_NTP" ]; then
+    cat > /tmp/buddy-ntp.conf << EOF
+server $LOCAL_NTP iburst
+restrict default nomodify nopeer noquery limited kod
+restrict 127.0.0.1
+restrict [::1]
+EOF
+
+    if [ -x /oem/usr/etc/init.d/S10ntp ]; then
+        /oem/usr/etc/init.d/S10ntp stop >/dev/null 2>&1
+    else
+        [ -f /var/run/ntpd.pid ] && kill "$(cat /var/run/ntpd.pid)" 2>/dev/null
+        rm -f /var/run/ntpd.pid
+    fi
+
+    if ntpd -g -p /var/run/ntpd.pid -c /tmp/buddy-ntp.conf; then
+        log "NTP redirected to configured local server"
+    else
+        log_err "Failed to start ntpd with configured local server"
+    fi
 fi
 
 # ------------------------------------------------------------
